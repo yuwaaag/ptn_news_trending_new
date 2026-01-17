@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <title>PTN AI NEWS LIVE</title>
+    <style>
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; color: white; }
+        .studio { position: relative; width: 100vw; height: 100vh; background: url('studio.jpg') center/cover no-repeat; }
+        .visual-box { position: absolute; right: 5%; top: 12%; width: 42%; height: 40%; border: 4px solid #00f2ff; border-radius: 12px; overflow: hidden; background:#000; display: flex; align-items: center; justify-content: center; }
+        #newsImg { width: 100%; height: 100%; object-fit: contain; }
+        .script-box { position: absolute; left: 3%; top: 12%; width: 45%; height: 60%; background: rgba(0,0,0,0.85); border-left: 10px solid #f00; padding: 30px; overflow: hidden; }
+        #teleprompter { position: relative; font-size: 32px; line-height: 1.6; top: 100%; font-weight: bold; }
+        .anchor-container { position: absolute; right: 0; bottom: 0; width: 65%; height: 100%; display: flex; justify-content: flex-end; align-items: flex-end; pointer-events: none; }
+        #anchorCanvas { max-width: 100%; max-height: 100%; }
+        #anchorVid { display: none; }
+        .ticker-bar { position: absolute; bottom: 0; width: 100%; height: 85px; background: linear-gradient(90deg, #b00, #500); display: flex; align-items: center; border-top: 4px solid #fff; }
+        marquee { font-size: 40px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="studio">
+        <div class="visual-box"><img id="newsImg" src=""></div>
+        <div class="script-box"><div id="teleprompter">Click to Start AI News...</div></div>
+        <div class="anchor-container"><canvas id="anchorCanvas"></canvas></div>
+        <video id="anchorVid" muted loop crossorigin="anonymous"><source src="anchor_video.mp4" type="video/mp4"></video>
+        <div class="ticker-bar"><marquee id="flashTicker">PTN AI NEWS LIVE...</marquee></div>
+    </div>
+<script>
+    const csvUrl = "https://docs.google.com/spreadsheets/d/e/2PACX-1vQIFnU9tSm55lZX2quTdqFsUpdKhc5azTfJ4a3M-x9dJW3Co16AeGuf570dRqdUPkZNju4qvpEGChtS/pub?gid=0&single=true&output=csv";
+    const proxyUrl = "https://script.google.com/macros/s/AKfycbw9r5AkK8VZA6eksUf8lx8qDWqe5vg54PIOYxkjOQMpfZVx_3fUJqRizeDuHNALmNZuYg/exec";
+    let newsItems = [], newsIndex = 0;
+    const video = document.getElementById("anchorVid"), canvas = document.getElementById("anchorCanvas"), ctx = canvas.getContext("2d");
+
+    function processChroma() {
+        if (video.paused) return;
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        let frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        for (let i = 0; i < frame.data.length / 4; i++) {
+            if (frame.data[i*4+1] > 100 && frame.data[i*4+1] > frame.data[i*4]*1.3) frame.data[i*4+3] = 0;
+        }
+        ctx.putImageData(frame, 0, 0);
+        requestAnimationFrame(processChroma);
+    }
+
+    async function setPhoto(kw) {
+        const img = document.getElementById("newsImg");
+        if(kw.startsWith("http")) { img.src = kw; return; }
+        img.src = `https://loremflickr.com/800/450/${encodeURIComponent(kw)}?t=${Date.now()}`;
+        fetch(`${proxyUrl}?kw=${encodeURIComponent(kw)}`).then(r => r.json()).then(d => { if(d.url) img.src = d.url; });
+    }
+
+    async function loadData() {
+        const res = await fetch(csvUrl + "?v=" + Date.now());
+        const data = await res.text();
+        const rows = data.split('\n').slice(1);
+        newsItems = rows.map(r => {
+            const c = r.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+            return { script: c[0].replace(/"/g,""), visual: c[1].replace(/"/g,""), flash: c[2].replace(/"/g,"") };
+        });
+        if(newsItems.length > 0) playNews();
+    }
+
+    function playNews() {
+        if(newsIndex >= newsItems.length) { newsIndex = 0; loadData(); return; }
+        const item = newsItems[newsIndex];
+        const prompter = document.getElementById("teleprompter");
+        prompter.style.transition = "none"; prompter.style.top = "100%";
+        prompter.innerText = item.script;
+        document.getElementById("flashTicker").innerText = item.flash;
+        setPhoto(item.visual);
+        window.speechSynthesis.cancel();
+        const msg = new SpeechSynthesisUtterance(item.script);
+        msg.lang = 'hi-IN'; msg.onstart = () => {
+            video.play(); canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+            processChroma();
+            setTimeout(() => { prompter.style.transition = `top ${item.script.length*0.2}s linear`; prompter.style.top = "-150%"; }, 500);
+        };
+        msg.onend = () => { video.pause(); newsIndex++; setTimeout(playNews, 2000); };
+        window.speechSynthesis.speak(msg);
+    }
+    window.onclick = () => { if(newsItems.length === 0) loadData(); };
+</script>
+</body>
+</html>
