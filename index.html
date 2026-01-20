@@ -2,14 +2,14 @@
 <html lang="hi">
 <head>
     <meta charset="UTF-8">
-    <title>PTN AI NEWS LIVE - Final Pro Sync</title>
+    <title>PTN AI NEWS LIVE - Final Stable</title>
     <style>
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; font-family: 'Segoe UI', sans-serif; color: white; }
         .studio { position: relative; width: 100vw; height: 100vh; background: url('studio.jpg') center/cover no-repeat; }
         .visual-box { position: absolute; right: 5%; top: 12%; width: 42%; height: 40%; border: 4px solid #00f2ff; border-radius: 12px; overflow: hidden; background:#000; display: flex; align-items: center; justify-content: center; box-shadow: 0 0 20px #00f2ff; }
-        #newsImg { width: 100%; height: 100%; object-fit: cover; transition: opacity 0.3s ease; }
+        #newsImg { width: 100%; height: 100%; object-fit: cover; transition: opacity 0.4s ease; }
         .script-box { position: absolute; left: 3%; top: 12%; width: 45%; height: 60%; background: rgba(0,0,0,0.85); border-left: 10px solid #f00; padding: 30px; overflow: hidden; }
-        #teleprompter { position: relative; font-size: 35px; line-height: 1.8; font-weight: bold; top: 0; transition: top 0.3s ease-out; }
+        #teleprompter { position: relative; font-size: 34px; line-height: 1.8; font-weight: bold; top: 0; transition: top 0.5s ease-out; }
         .anchor-container { position: absolute; right: 0; bottom: 0; width: 65%; height: 100%; display: flex; justify-content: flex-end; align-items: flex-end; pointer-events: none; }
         #anchorCanvas { max-width: 100%; max-height: 100%; }
         #anchorVid { display: none; }
@@ -30,7 +30,7 @@
     const proxyUrl = "https://script.google.com/macros/s/AKfycbyDu8uEVpAiwix9NGGyeoQE5lRyDs5MeoeMTm1eE6SntuNa9l_Q3nIYu_mp2wRYt4GUYQ/exec"; 
 
     let newsItems = [], newsIndex = 0;
-    let nextImageCache = ""; // अगली फोटो को स्टोर करने के लिए
+    let currentImageCache = ""; 
 
     const video = document.getElementById("anchorVid"), canvas = document.getElementById("anchorCanvas"), ctx = canvas.getContext("2d");
 
@@ -45,19 +45,13 @@
         requestAnimationFrame(processChroma);
     }
 
-    // ✅ फोटो को पहले से लोड करने का फंक्शन
-    async function preloadNextPhoto(index) {
-        const nextIdx = (index + 1) % newsItems.length;
-        const kw = newsItems[nextIdx].visual;
+    // फोटो लाने का फंक्शन
+    async function fetchImage(kw) {
         try {
             const r = await fetch(`${proxyUrl}?kw=${encodeURIComponent(kw)}`);
             const d = await r.json();
-            if(d.url) {
-                const tempImg = new Image();
-                tempImg.src = d.url; // ब्राउज़र इसे कैश में रख लेगा
-                nextImageCache = d.url;
-            }
-        } catch(e) { console.log("Preload failed"); }
+            return d.url || `https://loremflickr.com/800/450/${encodeURIComponent(kw)}`;
+        } catch(e) { return `https://loremflickr.com/800/450/india`; }
     }
 
     async function loadData() {
@@ -68,26 +62,31 @@
             const c = r.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
             return { script: (c[0]||"").replace(/"/g,""), visual: (c[1]||"").replace(/"/g,""), flash: (c[2]||"").replace(/"/g,"") };
         });
-        if(newsItems.length > 0) playNews();
+        
+        if(newsItems.length > 0) {
+            // पहली फोटो को तुरंत लोड करें
+            currentImageCache = await fetchImage(newsItems[0].visual);
+            playNews();
+        }
     }
 
-    function playNews() {
+    async function playNews() {
         if(newsIndex >= newsItems.length) { newsIndex = 0; loadData(); return; }
         
         const item = newsItems[newsIndex];
         const prompter = document.getElementById("teleprompter");
         const imgDisplay = document.getElementById("newsImg");
 
-        // UI Setup
         prompter.style.top = "0px"; 
         prompter.innerText = item.script;
         document.getElementById("flashTicker").innerText = item.flash;
 
-        // ✅ अगर कैश में इमेज है तो तुरंत दिखाओ, वरना डिफ़ॉल्ट लगाओ
-        imgDisplay.src = nextImageCache || `https://loremflickr.com/800/450/${encodeURIComponent(item.visual)}`;
-        
-        // अगली न्यूज़ की फोटो अभी से मँगवा लो
-        preloadNextPhoto(newsIndex);
+        // फोटो दिखाओ
+        imgDisplay.src = currentImageCache;
+
+        // अगली न्यूज़ की फोटो बैकग्राउंड में तैयार करो
+        const nextIdx = (newsIndex + 1) % newsItems.length;
+        fetchImage(newsItems[nextIdx].visual).then(url => { currentImageCache = url; });
 
         window.speechSynthesis.cancel();
         const msg = new SpeechSynthesisUtterance(item.script);
@@ -97,7 +96,8 @@
         msg.onboundary = (event) => {
             if (event.name === 'word') {
                 const percentage = event.charIndex / item.script.length;
-                prompter.style.top = `-${percentage * 450}px`; 
+                // ✅ रफ़्तार कम करने के लिए यहाँ 300 इस्तेमाल किया है (पहले 450 था)
+                prompter.style.top = `-${percentage * 300}px`; 
             }
         };
 
@@ -110,7 +110,7 @@
         msg.onend = () => {
             video.pause();
             newsIndex++;
-            setTimeout(playNews, 1000); // 1 सेकंड का गैप
+            setTimeout(playNews, 1500);
         };
 
         window.speechSynthesis.speak(msg);
